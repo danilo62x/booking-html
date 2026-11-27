@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <title>Agendamento — Serviços &amp; Horários</title>
+  <link rel="stylesheet" href="assets/css/tailwind.css" />
+  <script src="assets/js/state.js"></script>
+  <script src="assets/js/auth.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/bk.js"></script>
+  <script src="assets/js/query.js"></script>
+  <script src="assets/js/icons.js"></script>
+  <script src="assets/js/i18n.js"></script>
+</head>
+<body data-shell="public">
+  <div id="app"><div id="page"></div></div>
+
+  <script>
+    let tab = 'upcoming';
+
+    function myAppointments() {
+      const st = Bk.get();
+      const email = Bk.Booking.get().contact.email;
+      if (!email) return st.appointments;
+      const myIds = new Set(st.clients.filter((c) => c.email === email).map((c) => c.id));
+      const scoped = st.appointments.filter((a) => myIds.has(a.clientId));
+      return scoped.length ? scoped : st.appointments;
+    }
+
+    window.renderPage = function () {
+      const t = UI.t, icon = UI.icon;
+      const mine = myAppointments();
+      const upcoming = Query.upcomingAppointments(mine);
+      const past = Query.pastAppointments(mine);
+      const list = tab === 'upcoming' ? upcoming : past;
+
+      const tabBtn = (key) =>
+        '<button type="button" data-tab-key="' + key + '" class="-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition ' +
+        (tab === key ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-muted hover:text-body') + '">' + t('myBookings.' + key) + '</button>';
+
+      let body;
+      if (list.length === 0) {
+        if (tab === 'upcoming') {
+          body = UI.emptyState({
+            icon: 'calendar', title: t('myBookings.emptyUpcoming'), description: t('myBookings.emptyUpcomingDesc'),
+            action: '<a href="agendar.html" class="flex h-10 items-center gap-2 rounded-lg bg-brand-500 px-4 text-sm font-medium text-white hover:bg-brand-600">' + icon('plus', { size: 16 }) + ' ' + t('myBookings.bookNow') + '</a>',
+          });
+        } else {
+          body = UI.emptyState({ icon: 'clock', title: t('myBookings.emptyPast') });
+        }
+      } else {
+        body = list.map((a) => {
+          let actions = '';
+          if (tab === 'upcoming' && a.status !== 'cancelado') {
+            actions =
+              '<a href="agendar.html" title="' + t('myBookings.rescheduleHint') + '" class="flex h-9 items-center gap-1.5 rounded-lg border border-themed px-3 text-sm font-medium text-body transition hover:bg-gray-50 dark:hover:bg-gray-800">' + icon('refresh-cw', { size: 15 }) + ' ' + t('myBookings.reschedule') + '</a>' +
+              '<button type="button" data-cancel="' + a.id + '" class="flex h-9 items-center gap-1.5 rounded-lg border border-error-300 px-3 text-sm font-medium text-error-600 transition hover:bg-error-50 dark:hover:bg-error-500/10">' + icon('x', { size: 15 }) + ' ' + t('myBookings.cancel') + '</button>';
+          }
+          return UI.appointmentCard({ appointment: a, actions });
+        }).join('');
+        body = '<div class="space-y-4">' + body + '</div>';
+      }
+
+      document.getElementById('tx-main').innerHTML =
+        '<div class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">' +
+        '<div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h1 class="text-2xl font-bold text-heading sm:text-3xl">' + t('myBookings.title') + '</h1><p class="mt-2 text-muted">' + t('myBookings.subtitle') + '</p></div>' +
+        '<a href="agendar.html" class="flex h-10 items-center gap-2 rounded-lg bg-brand-500 px-4 text-sm font-medium text-white transition hover:bg-brand-600">' + icon('plus', { size: 16 }) + ' ' + t('myBookings.bookNow') + '</a></div>' +
+        '<div class="mt-8 flex gap-1 border-b border-themed">' + tabBtn('upcoming') + tabBtn('past') + '</div>' +
+        '<div class="mt-6">' + body + '</div></div>';
+
+      document.querySelectorAll('[data-tab-key]').forEach((el) => el.addEventListener('click', () => { tab = el.getAttribute('data-tab-key'); window.renderPage(); }));
+      document.querySelectorAll('[data-cancel]').forEach((el) => el.addEventListener('click', () => {
+        Bk.setStatus(Number(el.getAttribute('data-cancel')), 'cancelado');
+        UI.notify(t('myBookings.canceled'), 'success');
+        window.renderPage();
+      }));
+    };
+  </script>
+  <script src="assets/js/layout.js"></script>
+</body>
+</html>

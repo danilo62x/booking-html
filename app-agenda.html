@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <title>Agendamento — Serviços &amp; Horários</title>
+  <link rel="stylesheet" href="assets/css/tailwind.css" />
+  <script src="assets/js/state.js"></script>
+  <script src="assets/js/auth.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/bk.js"></script>
+  <script src="assets/js/query.js"></script>
+  <script src="assets/js/icons.js"></script>
+  <script src="assets/js/i18n.js"></script>
+</head>
+<body data-shell="app" data-guard="true">
+  <div id="app"><div id="page"></div></div>
+
+  <script>
+    const HOURS = Array.from({ length: 13 }, (_, i) => i + 8);
+    let view = 'day';
+    let cursor = new Date();
+    let editingId = null;
+
+    function addDays(d, n) { const o = new Date(d); o.setDate(o.getDate() + n); return o; }
+
+    function blockHtml(a) {
+      const st = Bk.get();
+      const svc = Query.serviceById(st.services, a.serviceId);
+      const pro = Query.professionalById(st.professionals, a.professionalId);
+      const client = Query.clientById(st.clients, a.clientId);
+      const cls = a.status === 'cancelado' ? 'border-error-400 bg-error-50 opacity-60 dark:bg-error-500/10'
+        : a.status === 'concluido' ? 'border-success-400 bg-success-50 dark:bg-success-500/10'
+        : a.status === 'confirmado' ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10'
+        : 'border-warning-400 bg-warning-50 dark:bg-warning-500/10';
+      return '<button type="button" data-edit="' + a.id + '" class="w-full rounded-lg border-l-4 p-2.5 text-left text-xs transition hover:shadow-theme-sm ' + cls + '">' +
+        '<p class="font-semibold text-heading">' + UI.fmtTime(a.datetime) + ' · ' + (svc ? svc.name : '') + '</p>' +
+        '<p class="mt-0.5 truncate text-muted">' + (client ? client.name : '') + ' — ' + (pro ? pro.name : '') + '</p></button>';
+    }
+
+    window.renderPage = function () {
+      const t = UI.t, icon = UI.icon;
+      const st = Bk.get();
+      const weekdays = UI.tArr('calendar.weekdays');
+
+      // Week days (Monday start).
+      const weekStart = new Date(cursor);
+      weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+      const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
+      const rangeLabel = view === 'day'
+        ? cursor.toLocaleDateString(UI.lang(), { weekday: 'long', day: 'numeric', month: 'long' })
+        : weekDays[0].toLocaleDateString(UI.lang(), { day: 'numeric', month: 'short' }) + ' – ' + weekDays[6].toLocaleDateString(UI.lang(), { day: 'numeric', month: 'short' });
+
+      const viewBtn = (v, ic, label) =>
+        '<button type="button" data-view="' + v + '" class="flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium ' + (view === v ? 'bg-brand-500 text-white' : 'text-body') + '">' + icon(ic, { size: 15 }) + ' ' + label + '</button>';
+
+      const toolbar =
+        '<div class="mb-4 flex flex-wrap items-center justify-between gap-3"><div class="flex items-center gap-2">' +
+        '<button type="button" data-nav="-1" class="flex h-9 w-9 items-center justify-center rounded-lg border border-themed text-body hover:bg-gray-50 dark:hover:bg-gray-800">' + icon('chevron-left', { size: 16 }) + '</button>' +
+        '<button type="button" data-today class="h-9 rounded-lg border border-themed px-3 text-sm font-medium text-body hover:bg-gray-50 dark:hover:bg-gray-800">' + t('agenda.today') + '</button>' +
+        '<button type="button" data-nav="1" class="flex h-9 w-9 items-center justify-center rounded-lg border border-themed text-body hover:bg-gray-50 dark:hover:bg-gray-800">' + icon('chevron-right', { size: 16 }) + '</button>' +
+        '<span class="ml-2 text-sm font-medium capitalize text-heading">' + rangeLabel + '</span></div>' +
+        '<div class="flex items-center rounded-lg border border-themed p-1">' + viewBtn('day', 'calendar', t('agenda.dayView')) + viewBtn('week', 'grid', t('agenda.weekView')) + '</div></div>';
+
+      let content;
+      if (view === 'day') {
+        const dayKey = Query.ymd(cursor);
+        const dayAppts = Query.appointmentsForDay(st.appointments, dayKey);
+        const byHour = new Map();
+        for (const a of dayAppts) {
+          const h = new Date(a.datetime).getHours();
+          const arr = byHour.get(h) || []; arr.push(a); byHour.set(h, arr);
+        }
+        const rail = HOURS.map((h) => {
+          const items = byHour.get(h) || [];
+          const cell = items.length === 0
+            ? '<button type="button" data-create="' + dayKey + '" class="flex h-8 w-full items-center rounded-lg border border-dashed border-themed px-2 text-xs text-muted transition hover:border-brand-300 hover:text-brand-600">' + icon('plus', { size: 13 }) + ' <span class="ml-1">' + t('agenda.new') + '</span></button>'
+            : items.map(blockHtml).join('');
+          return '<div class="flex items-start gap-3 border-b border-themed px-4 py-3 last:border-0"><span class="w-12 shrink-0 pt-0.5 text-xs font-medium text-muted">' + String(h).padStart(2, '0') + ':00</span><div class="flex-1 space-y-1.5">' + cell + '</div></div>';
+        }).join('');
+
+        const dayList = dayAppts.length === 0
+          ? '<p class="py-6 text-center text-sm text-muted">' + t('agenda.empty') + '</p>'
+          : dayAppts.map((a) => {
+              let actions = '';
+              if (a.status !== 'cancelado' && a.status !== 'concluido') {
+                actions = '<div class="mt-2 flex flex-wrap gap-1.5">' +
+                  (a.status === 'pendente' ? '<button type="button" data-status="confirmado" data-id="' + a.id + '" class="rounded-md bg-brand-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-600">' + t('agenda.confirm') + '</button>' : '') +
+                  '<button type="button" data-status="concluido" data-id="' + a.id + '" class="rounded-md border border-success-300 px-2.5 py-1 text-xs font-medium text-success-600 hover:bg-success-50 dark:hover:bg-success-500/10">' + t('agenda.complete') + '</button>' +
+                  '<button type="button" data-status="cancelado" data-id="' + a.id + '" class="rounded-md border border-error-300 px-2.5 py-1 text-xs font-medium text-error-600 hover:bg-error-50 dark:hover:bg-error-500/10">' + t('agenda.cancel') + '</button></div>';
+              }
+              return '<div class="rounded-xl border border-themed p-3">' + blockHtml(a) + actions + '</div>';
+            }).join('');
+
+        content =
+          '<div class="grid gap-5 lg:grid-cols-[1fr_340px]">' +
+          '<div class="surface-card overflow-hidden rounded-2xl border">' + rail + '</div>' +
+          '<div class="surface-card rounded-2xl border p-5"><h3 class="text-base font-semibold text-heading">' + t('dashboard.upcomingTitle') + '</h3><div class="mt-4 space-y-3">' + dayList + '</div></div></div>';
+      } else {
+        const todayKey = Query.ymd(new Date());
+        content = '<div class="surface-card overflow-x-auto rounded-2xl border"><div class="grid min-w-[760px] grid-cols-7">' +
+          weekDays.map((d) => {
+            const key = Query.ymd(d);
+            const dayAppts = Query.appointmentsForDay(st.appointments, key);
+            const isToday = key === todayKey;
+            const cells = dayAppts.length === 0 ? '<p class="pt-6 text-center text-xs text-muted">—</p>' : dayAppts.map(blockHtml).join('');
+            return '<div class="border-r border-themed last:border-r-0">' +
+              '<button type="button" data-create="' + key + '" class="w-full border-b border-themed px-2 py-3 text-center transition hover:bg-gray-50 dark:hover:bg-white/5 ' + (isToday ? 'bg-brand-50 dark:bg-brand-500/10' : '') + '">' +
+              '<p class="text-xs font-medium text-muted">' + weekdays[d.getDay()] + '</p><p class="text-lg font-bold ' + (isToday ? 'text-brand-600 dark:text-brand-400' : 'text-heading') + '">' + d.getDate() + '</p></button>' +
+              '<div class="min-h-[320px] space-y-1.5 p-2">' + cells + '</div></div>';
+          }).join('') + '</div></div>';
+      }
+
+      document.getElementById('page').innerHTML =
+        UI.pageHeader({ title: t('agenda.title'), subtitle: t('agenda.subtitle'),
+          action: '<button type="button" data-create="' + Query.ymd(cursor) + '" class="flex h-10 items-center gap-2 rounded-lg bg-brand-500 px-4 text-sm font-medium text-white transition hover:bg-brand-600">' + icon('plus', { size: 16 }) + ' ' + t('agenda.new') + '</button>' }) +
+        toolbar + content + UI.modal('appt-modal', { size: 'md' });
+
+      bindAgenda();
+    };
+
+    function bindAgenda() {
+      const page = document.getElementById('page');
+      page.querySelectorAll('[data-view]').forEach((el) => el.addEventListener('click', () => { view = el.getAttribute('data-view'); window.renderPage(); }));
+      page.querySelectorAll('[data-nav]').forEach((el) => el.addEventListener('click', () => { const n = Number(el.getAttribute('data-nav')); cursor = addDays(cursor, view === 'day' ? n : n * 7); window.renderPage(); }));
+      const today = page.querySelector('[data-today]');
+      if (today) today.addEventListener('click', () => { cursor = new Date(); window.renderPage(); });
+      page.querySelectorAll('[data-create]').forEach((el) => el.addEventListener('click', () => openModal(null, el.getAttribute('data-create'))));
+      page.querySelectorAll('[data-edit]').forEach((el) => el.addEventListener('click', () => openModal(Number(el.getAttribute('data-edit')))));
+      page.querySelectorAll('[data-status]').forEach((el) => el.addEventListener('click', () => {
+        Bk.setStatus(Number(el.getAttribute('data-id')), el.getAttribute('data-status'));
+        UI.notify(UI.t('agenda.statusUpdated'), 'success');
+        window.renderPage();
+      }));
+    }
+
+    function openModal(id, defaultDate) {
+      const t = UI.t;
+      const st = Bk.get();
+      editingId = id;
+      const appt = id != null ? st.appointments.find((a) => a.id === id) : null;
+      const d = appt ? new Date(appt.datetime) : null;
+      const date = appt ? Query.ymd(d) : (defaultDate || Query.ymd(new Date()));
+      const time = appt ? String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') : '09:00';
+      const serviceId = appt ? appt.serviceId : '';
+      const professionalId = appt ? appt.professionalId : '';
+      const clientId = appt ? appt.clientId : '';
+      const status = appt ? appt.status : 'pendente';
+      const notes = appt ? appt.notes : '';
+      const fieldCls = 'h-11 w-full rounded-lg border border-themed bg-transparent px-3 text-sm text-body focus-ring';
+
+      const eligible = serviceId ? Query.professionalsForService(st.professionals, Number(serviceId)) : st.professionals;
+      const opt = (v, label, sel) => '<option value="' + v + '"' + (String(sel) === String(v) ? ' selected' : '') + '>' + label + '</option>';
+
+      const body =
+        '<div class="space-y-4">' +
+        '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('agenda.fields.service') + '</label><select data-f="service" class="' + fieldCls + '">' + opt('', t('agenda.errors.service'), serviceId) + st.services.map((s) => opt(s.id, s.name, serviceId)).join('') + '</select></div>' +
+        '<div class="grid gap-4 sm:grid-cols-2">' +
+        '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('agenda.fields.professional') + '</label><select data-f="professional" class="' + fieldCls + '">' + opt('', t('agenda.errors.professional'), professionalId) + eligible.map((p) => opt(p.id, p.name, professionalId)).join('') + '</select></div>' +
+        '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('agenda.fields.client') + '</label><select data-f="client" class="' + fieldCls + '">' + opt('', t('agenda.selectClient'), clientId) + st.clients.map((c) => opt(c.id, c.name, clientId)).join('') + '</select></div></div>' +
+        '<div class="grid gap-4 sm:grid-cols-3">' +
+        '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('agenda.fields.date') + '</label><input data-f="date" type="date" value="' + date + '" class="' + fieldCls + '"/></div>' +
+        '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('agenda.fields.time') + '</label><input data-f="time" type="time" value="' + time + '" class="' + fieldCls + '"/></div>' +
+        '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('agenda.fields.status') + '</label><select data-f="status" class="' + fieldCls + '">' + ['pendente', 'confirmado', 'concluido', 'cancelado'].map((s) => opt(s, t('appointmentStatuses.' + s), status)).join('') + '</select></div></div>' +
+        '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('agenda.fields.notes') + '</label><textarea data-f="notes" rows="2" class="w-full rounded-lg border border-themed bg-transparent px-3 py-2 text-sm text-body focus-ring">' + notes + '</textarea></div></div>';
+
+      const footer =
+        '<button type="button" data-modal-close class="rounded-lg border border-themed px-4 py-2 text-sm font-medium text-body hover:bg-gray-50 dark:hover:bg-gray-800">' + t('common.cancel') + '</button>' +
+        '<button type="button" data-save class="rounded-lg bg-brand-500 px-5 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-40">' + t('common.save') + '</button>';
+
+      const modalWrap = document.getElementById('appt-modal');
+      modalWrap.querySelector('[data-modal-body]').innerHTML = body;
+      let foot = modalWrap.querySelector('[data-modal-footer]');
+      if (!foot) {
+        foot = document.createElement('div');
+        foot.className = 'flex justify-end gap-3 border-t border-themed px-6 py-4';
+        foot.setAttribute('data-modal-footer', '');
+        modalWrap.querySelector('.surface-card').appendChild(foot);
+      }
+      foot.innerHTML = footer;
+      modalWrap.querySelector('h2').textContent = appt ? t('agenda.editTitle') : t('agenda.newTitle');
+
+      // Re-filter professionals when service changes.
+      modalWrap.querySelector('[data-f="service"]').addEventListener('change', function () {
+        const sel = Number(this.value);
+        const pros = sel ? Query.professionalsForService(st.professionals, sel) : st.professionals;
+        const proSel = modalWrap.querySelector('[data-f="professional"]');
+        proSel.innerHTML = '<option value="">' + t('agenda.errors.professional') + '</option>' + pros.map((p) => '<option value="' + p.id + '">' + p.name + '</option>').join('');
+      });
+
+      modalWrap.querySelector('[data-save]').addEventListener('click', function () {
+        const g = (f) => modalWrap.querySelector('[data-f="' + f + '"]').value;
+        const sId = Number(g('service')), pId = Number(g('professional')), cId = Number(g('client')), tm = g('time');
+        if (!sId || !pId || !cId || !tm) return;
+        const svc = st.services.find((s) => s.id === sId);
+        const parts = tm.split(':').map(Number);
+        const dt = new Date(g('date')); dt.setHours(parts[0], parts[1], 0, 0);
+        const payload = { serviceId: sId, professionalId: pId, clientId: cId, datetime: dt.toISOString(), duration: svc.duration, price: svc.price, status: g('status'), notes: g('notes') };
+        if (editingId != null) { Bk.updateAppointment(editingId, payload); UI.notify(t('agenda.updated'), 'success'); }
+        else { Bk.createAppointment(payload); UI.notify(t('agenda.created'), 'success'); }
+        UI.closeModal('appt-modal');
+        window.renderPage();
+      });
+
+      UI.openModal('appt-modal');
+    }
+  </script>
+  <script src="assets/js/layout.js"></script>
+</body>
+</html>

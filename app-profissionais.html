@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <title>Agendamento — Serviços &amp; Horários</title>
+  <link rel="stylesheet" href="assets/css/tailwind.css" />
+  <script src="assets/js/state.js"></script>
+  <script src="assets/js/auth.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/bk.js"></script>
+  <script src="assets/js/query.js"></script>
+  <script src="assets/js/icons.js"></script>
+  <script src="assets/js/i18n.js"></script>
+</head>
+<body data-shell="app" data-guard="true">
+  <div id="app"><div id="page"></div></div>
+
+  <script>
+    const SPECIALTIES = ['hairstylist', 'barber', 'colorist', 'esthetician', 'manicurist', 'therapist'];
+    const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
+    let editingId = null;
+    let editServiceIds = [];
+    let editSchedule = {};
+
+    window.renderPage = function () {
+      const t = UI.t, icon = UI.icon;
+      const table = UI.dataTable({
+        id: 'pro-table',
+        rows: Bk.get().professionals,
+        pageSize: 8,
+        searchKeys: ['name'],
+        columns: [
+          { key: 'name', header: t('professionals.columns.professional'), render: (p) => '<div class="flex items-center gap-3">' + UI.avatar({ src: p.avatar, name: p.name, size: 'sm' }) + '<p class="font-medium text-heading">' + p.name + '</p></div>' },
+          { key: 'specialty', header: t('professionals.columns.specialty'), render: (p) => '<span class="text-muted">' + t('specialties.' + p.specialty) + '</span>' },
+          { header: t('professionals.columns.services'), sortable: false, render: (p) => '<span class="text-muted">' + t('professionals.servicesCount', { count: p.serviceIds.length }) + '</span>' },
+          { key: 'rating', header: t('professionals.columns.rating'), render: (p) => '<span class="inline-flex items-center gap-1 text-warning-500">' + icon('star', { size: 14 }) + ' <span class="font-medium text-heading">' + p.rating.toFixed(1) + '</span></span>' },
+          { key: 'active', header: t('professionals.columns.status'), sortable: false, render: (p) => UI.switchToggle(p.active, 'data-toggle="' + p.id + '"') },
+          { header: '', sortable: false, render: (p) => '<div class="flex justify-end"><button type="button" data-edit="' + p.id + '" class="rounded-md p-1.5 text-muted hover:bg-gray-100 hover:text-brand-600 dark:hover:bg-gray-800" aria-label="' + t('common.edit') + '">' + icon('edit', { size: 16 }) + '</button></div>' },
+        ],
+      });
+
+      document.getElementById('page').innerHTML =
+        UI.pageHeader({ title: t('professionals.title'), subtitle: t('professionals.subtitle'),
+          action: '<button type="button" data-new class="flex h-10 items-center gap-2 rounded-lg bg-brand-500 px-4 text-sm font-medium text-white transition hover:bg-brand-600">' + icon('plus', { size: 16 }) + ' ' + t('professionals.new') + '</button>' }) +
+        table + UI.modal('pro-modal', { size: 'lg' });
+
+      UI.renderTable('pro-table');
+      bind();
+    };
+
+    function bind() {
+      const page = document.getElementById('page');
+      page.querySelector('[data-new]').addEventListener('click', () => openModal(null));
+      page.querySelectorAll('[data-edit]').forEach((el) => el.addEventListener('click', () => openModal(Number(el.getAttribute('data-edit')))));
+      page.querySelectorAll('[data-toggle]').forEach((el) => el.addEventListener('click', () => {
+        const id = Number(el.getAttribute('data-toggle'));
+        const p = Bk.get().professionals.find((x) => x.id === id);
+        Bk.toggleProfessionalActive(id);
+        UI.notify(p.active ? UI.t('professionals.deactivated') : UI.t('professionals.activated'), 'success');
+        window.renderPage();
+      }));
+    }
+
+    function renderScheduleEditor() {
+      const t = UI.t;
+      const weekdays = UI.tArr('calendar.weekdays');
+      const startOpts = (sel) => Array.from({ length: 15 }, (_, i) => i + 6).map((h) => '<option value="' + h + '"' + (sel === h ? ' selected' : '') + '>' + String(h).padStart(2, '0') + ':00</option>').join('');
+      const endOpts = (sel) => Array.from({ length: 15 }, (_, i) => i + 8).map((h) => '<option value="' + h + '"' + (sel === h ? ' selected' : '') + '>' + String(h).padStart(2, '0') + ':00</option>').join('');
+      return WEEK_ORDER.map((day) => {
+        const w = editSchedule[day];
+        const slot = w
+          ? '<div class="flex items-center gap-2"><select data-day-start="' + day + '" class="h-9 rounded-lg border border-themed bg-transparent px-2 text-sm text-body focus-ring">' + startOpts(w[0]) + '</select><span class="text-muted">—</span><select data-day-end="' + day + '" class="h-9 rounded-lg border border-themed bg-transparent px-2 text-sm text-body focus-ring">' + endOpts(w[1]) + '</select></div>'
+          : '<span class="text-sm text-muted">' + t('professionals.dayOff') + '</span>';
+        return '<div class="flex items-center gap-3"><span class="w-10 text-sm font-medium text-body">' + weekdays[day] + '</span>' + slot +
+          '<button type="button" data-day-toggle="' + day + '" class="ml-auto rounded-md border border-themed px-2.5 py-1 text-xs font-medium text-body hover:bg-gray-50 dark:hover:bg-gray-800">' + (w ? t('professionals.dayOff') : t('common.active')) + '</button></div>';
+      }).join('');
+    }
+
+    function bindScheduleEditor(wrap) {
+      wrap.querySelectorAll('[data-day-start]').forEach((el) => el.addEventListener('change', function () { const d = Number(this.getAttribute('data-day-start')); editSchedule[d] = [Number(this.value), editSchedule[d][1]]; }));
+      wrap.querySelectorAll('[data-day-end]').forEach((el) => el.addEventListener('change', function () { const d = Number(this.getAttribute('data-day-end')); editSchedule[d] = [editSchedule[d][0], Number(this.value)]; }));
+      wrap.querySelectorAll('[data-day-toggle]').forEach((el) => el.addEventListener('click', function () {
+        const d = Number(this.getAttribute('data-day-toggle'));
+        editSchedule[d] = editSchedule[d] ? null : [9, 18];
+        wrap.querySelector('[data-schedule]').innerHTML = renderScheduleEditor();
+        bindScheduleEditor(wrap);
+      }));
+    }
+
+    function openModal(id) {
+      const t = UI.t;
+      const st = Bk.get();
+      editingId = id;
+      const pro = id != null ? st.professionals.find((p) => p.id === id) : null;
+      editServiceIds = pro ? [...pro.serviceIds] : [];
+      editSchedule = pro ? { ...pro.schedule } : { 0: null, 1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: null };
+      const fieldCls = 'h-11 w-full rounded-lg border border-themed bg-transparent px-3 text-sm text-body focus-ring';
+      const name = pro ? pro.name : '';
+      const specialty = pro ? pro.specialty : 'hairstylist';
+      const bio = pro ? pro.bio : '';
+      const active = pro ? pro.active : true;
+
+      const specOpts = SPECIALTIES.map((s) => '<option value="' + s + '"' + (specialty === s ? ' selected' : '') + '>' + t('specialties.' + s) + '</option>').join('');
+      const serviceChips = st.services.map((s) => {
+        const on = editServiceIds.includes(s.id);
+        return '<button type="button" data-svc="' + s.id + '" class="rounded-lg border px-3 py-1.5 text-xs font-medium transition ' + (on ? 'border-brand-500 bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400' : 'border-themed text-body hover:border-brand-300') + '">' + s.name + '</button>';
+      }).join('');
+
+      const body =
+        '<div class="space-y-5">' +
+        '<div class="grid gap-4 sm:grid-cols-2"><div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('professionals.fields.name') + '</label><input data-f="name" value="' + name.replace(/"/g, '&quot;') + '" class="' + fieldCls + '"/></div>' +
+        '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('professionals.fields.specialty') + '</label><select data-f="specialty" class="' + fieldCls + '">' + specOpts + '</select></div></div>' +
+        '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('professionals.fields.bio') + '</label><textarea data-f="bio" rows="2" class="w-full rounded-lg border border-themed bg-transparent px-3 py-2 text-sm text-body focus-ring">' + bio + '</textarea></div>' +
+        '<div><label class="mb-2 block text-sm font-medium text-heading">' + t('professionals.fields.services') + '</label><div data-services class="flex flex-wrap gap-2">' + serviceChips + '</div></div>' +
+        '<div><label class="mb-1 block text-sm font-medium text-heading">' + t('professionals.fields.schedule') + '</label><p class="mb-3 text-xs text-muted">' + t('professionals.scheduleHint') + '</p><div data-schedule class="space-y-2">' + renderScheduleEditor() + '</div></div>' +
+        '<label class="flex cursor-pointer items-center gap-2 text-sm text-body"><input data-f="active" type="checkbox" ' + (active ? 'checked' : '') + ' class="h-4 w-4 rounded border-themed accent-brand-500"/>' + t('professionals.fields.active') + '</label>' +
+        '<p data-err class="hidden text-sm text-error-600"></p></div>';
+
+      const footer =
+        '<button type="button" data-modal-close class="rounded-lg border border-themed px-4 py-2 text-sm font-medium text-body hover:bg-gray-50 dark:hover:bg-gray-800">' + t('common.cancel') + '</button>' +
+        '<button type="button" data-save class="rounded-lg bg-brand-500 px-5 py-2 text-sm font-medium text-white hover:bg-brand-600">' + t('common.save') + '</button>';
+
+      const wrap = document.getElementById('pro-modal');
+      wrap.querySelector('[data-modal-body]').innerHTML = body;
+      let foot = wrap.querySelector('[data-modal-footer]');
+      if (!foot) { foot = document.createElement('div'); foot.className = 'flex justify-end gap-3 border-t border-themed px-6 py-4'; foot.setAttribute('data-modal-footer', ''); wrap.querySelector('.surface-card').appendChild(foot); }
+      foot.innerHTML = footer;
+      wrap.querySelector('h2').textContent = pro ? t('professionals.editTitle') : t('professionals.newTitle');
+
+      // Service chip toggles.
+      wrap.querySelectorAll('[data-svc]').forEach((el) => el.addEventListener('click', function () {
+        const sid = Number(this.getAttribute('data-svc'));
+        editServiceIds = editServiceIds.includes(sid) ? editServiceIds.filter((x) => x !== sid) : [...editServiceIds, sid];
+        const on = editServiceIds.includes(sid);
+        this.className = 'rounded-lg border px-3 py-1.5 text-xs font-medium transition ' + (on ? 'border-brand-500 bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400' : 'border-themed text-body hover:border-brand-300');
+      }));
+      bindScheduleEditor(wrap);
+
+      wrap.querySelector('[data-save]').addEventListener('click', function () {
+        const g = (f) => wrap.querySelector('[data-f="' + f + '"]');
+        const nm = g('name').value.trim();
+        const err = wrap.querySelector('[data-err]');
+        if (!nm) { err.textContent = t('professionals.errors.name'); err.classList.remove('hidden'); return; }
+        const payload = {
+          name: nm,
+          avatar: pro ? pro.avatar : 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120&h=120&fit=crop&q=70&auto=format',
+          specialty: g('specialty').value,
+          bio: g('bio').value,
+          rating: pro ? pro.rating : 5.0,
+          serviceIds: editServiceIds,
+          schedule: editSchedule,
+          active: g('active').checked,
+        };
+        if (editingId != null) { Bk.updateProfessional(editingId, payload); UI.notify(t('professionals.updated'), 'success'); }
+        else { Bk.addProfessional(payload); UI.notify(t('professionals.created'), 'success'); }
+        UI.closeModal('pro-modal');
+        window.renderPage();
+      });
+
+      UI.openModal('pro-modal');
+    }
+  </script>
+  <script src="assets/js/layout.js"></script>
+</body>
+</html>

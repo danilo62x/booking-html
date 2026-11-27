@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <title>Agendamento — Serviços &amp; Horários</title>
+  <link rel="stylesheet" href="assets/css/tailwind.css" />
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.49.1/dist/apexcharts.min.js"></script>
+  <script src="assets/js/state.js"></script>
+  <script src="assets/js/auth.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/bk.js"></script>
+  <script src="assets/js/query.js"></script>
+  <script src="assets/js/icons.js"></script>
+  <script src="assets/js/i18n.js"></script>
+</head>
+<body data-shell="app" data-guard="true">
+  <div id="app"><div id="page"></div></div>
+
+  <script>
+    let charts = [];
+
+    window.renderPage = function () {
+      const t = UI.t, icon = UI.icon;
+      const st = Bk.get();
+      const user = Auth.getUser();
+      const m = Query.computeMetrics(st.appointments, st.professionals);
+      const top = Query.countByService(st.appointments, st.services);
+      const upcoming = Query.upcomingAppointments(st.appointments, 5);
+
+      const kpis =
+        UI.kpiCard({ title: t('dashboard.kpis.today'), value: m.today, icon: 'calendar', accent: 'brand', trend: 'up', trendValue: '8%' }) +
+        UI.kpiCard({ title: t('dashboard.kpis.week'), value: m.week, icon: 'activity', accent: 'info', trend: 'up', trendValue: '12%' }) +
+        UI.kpiCard({ title: t('dashboard.kpis.revenue'), value: UI.fmt(m.revenue), icon: 'dollar', accent: 'success', trend: 'up', trendValue: '6%' }) +
+        UI.kpiCard({ title: t('dashboard.kpis.occupancy'), value: m.occupancy + '%', icon: 'trending-up', accent: 'warning' });
+
+      const upcomingList = upcoming.length === 0
+        ? '<p class="mt-6 text-center text-sm text-muted">' + t('dashboard.noUpcoming') + '</p>'
+        : '<ul class="mt-4 divide-themed">' + upcoming.map((a) => {
+            const svc = Query.serviceById(st.services, a.serviceId);
+            const pro = Query.professionalById(st.professionals, a.professionalId);
+            const client = Query.clientById(st.clients, a.clientId);
+            return '<li class="flex items-center gap-3 py-3">' + UI.avatar({ src: pro && pro.avatar, name: pro && pro.name, size: 'sm' }) +
+              '<div class="min-w-0 flex-1"><p class="truncate text-sm font-medium text-heading">' + (svc ? svc.name : '') + '</p><p class="truncate text-xs text-muted">' + (client ? client.name : '') + ' · ' + UI.fmtDateTime(a.datetime) + '</p></div>' + UI.statusPill(a.status) + '</li>';
+          }).join('') + '</ul>';
+
+      const topList = '<ul class="mt-4 space-y-3">' + top.map((x, i) =>
+        '<li class="flex items-center gap-3"><span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-sm font-bold text-brand-600 dark:bg-brand-500/15 dark:text-brand-400">' + (i + 1) + '</span>' +
+        '<div class="min-w-0 flex-1"><p class="truncate text-sm font-medium text-heading">' + x.service.name + '</p><p class="text-xs text-muted">' + x.count + ' ' + t('dashboard.bookingsLabel') + '</p></div>' +
+        '<span class="text-sm font-semibold text-brand-600 dark:text-brand-400">' + UI.fmt(x.service.price) + '</span></li>'
+      ).join('') + '</ul>';
+
+      document.getElementById('page').innerHTML =
+        UI.pageHeader({ title: t('dashboard.title'), subtitle: t('dashboard.welcome', { name: (user && user.name) || '' }) }) +
+        '<div class="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">' + kpis + '</div>' +
+        '<div class="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-3">' +
+        '<div class="surface-card rounded-2xl border p-5 xl:col-span-2"><h3 class="text-base font-semibold text-heading">' + t('dashboard.trendTitle') + '</h3><div class="mt-4" id="chart-trend"></div></div>' +
+        '<div class="surface-card rounded-2xl border p-5"><h3 class="text-base font-semibold text-heading">' + t('dashboard.byServiceTitle') + '</h3><div class="mt-4" id="chart-service"></div></div>' +
+        '</div>' +
+        '<div class="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-3">' +
+        '<div class="surface-card rounded-2xl border p-5 xl:col-span-2"><div class="flex items-center justify-between"><h3 class="text-base font-semibold text-heading">' + t('dashboard.upcomingTitle') + '</h3><a href="app-agenda.html" class="text-sm font-medium text-brand-600 hover:text-brand-700">' + t('common.viewAll') + '</a></div>' + upcomingList + '</div>' +
+        '<div class="surface-card rounded-2xl border p-5"><div class="flex items-center justify-between"><h3 class="text-base font-semibold text-heading">' + t('dashboard.topServicesTitle') + '</h3><a href="app-servicos.html" class="text-sm font-medium text-brand-600 hover:text-brand-700">' + t('common.viewAll') + '</a></div>' + topList + '</div>' +
+        '</div>';
+
+      renderCharts();
+    };
+
+    function renderCharts() {
+      if (typeof ApexCharts === 'undefined') return;
+      charts.forEach((c) => c.destroy());
+      charts = [];
+      const t = UI.t;
+      const st = Bk.get();
+      const dark = UIState.get().darkMode;
+      const baseText = dark ? '#98a2b3' : '#667085';
+      const grid = dark ? '#1f2937' : '#e4e7ec';
+      const common = {
+        chart: { fontFamily: 'Outfit, sans-serif', toolbar: { show: false }, foreColor: baseText },
+        grid: { borderColor: grid, strokeDashArray: 3 },
+        dataLabels: { enabled: false },
+        tooltip: { theme: dark ? 'dark' : 'light' },
+      };
+      const S = Data.REVENUE_SERIES;
+      const top = Query.countByService(st.appointments, st.services);
+
+      const trendEl = document.getElementById('chart-trend');
+      if (trendEl) {
+        const c = new ApexCharts(trendEl, Object.assign({}, common, {
+          chart: Object.assign({}, common.chart, { type: 'line', height: 300, stacked: false }),
+          series: [
+            { name: t('dashboard.legendAppointments'), type: 'column', data: S.appointments },
+            { name: t('dashboard.legendRevenue'), type: 'line', data: S.revenue },
+          ],
+          xaxis: { categories: S.categories },
+          yaxis: [
+            { seriesName: t('dashboard.legendAppointments'), labels: { formatter: (v) => `${Math.round(v)}` } },
+            { opposite: true, seriesName: t('dashboard.legendRevenue'), labels: { formatter: (v) => `${Math.round(v)}` } },
+          ],
+          stroke: { curve: 'smooth', width: [0, 3] },
+          plotOptions: { bar: { borderRadius: 4, columnWidth: '45%' } },
+          legend: { show: true, position: 'top' },
+          colors: ['#465fff', '#12b76a'],
+        }));
+        c.render(); charts.push(c);
+      }
+
+      const svcEl = document.getElementById('chart-service');
+      if (svcEl) {
+        const c = new ApexCharts(svcEl, Object.assign({}, common, {
+          chart: Object.assign({}, common.chart, { type: 'donut', height: 300 }),
+          series: top.map((x) => x.count),
+          labels: top.map((x) => x.service.name),
+          legend: { position: 'bottom' },
+          dataLabels: { enabled: true },
+          colors: ['#465fff', '#12b76a', '#f79009', '#0ba5ec', '#f04438'],
+          plotOptions: { pie: { donut: { size: '62%' } } },
+        }));
+        c.render(); charts.push(c);
+      }
+    }
+
+    window.onThemeChange = renderCharts;
+  </script>
+  <script src="assets/js/layout.js"></script>
+</body>
+</html>

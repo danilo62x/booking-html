@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <title>Agendamento — Serviços &amp; Horários</title>
+  <link rel="stylesheet" href="assets/css/tailwind.css" />
+  <script src="assets/js/state.js"></script>
+  <script src="assets/js/auth.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/bk.js"></script>
+  <script src="assets/js/query.js"></script>
+  <script src="assets/js/icons.js"></script>
+  <script src="assets/js/i18n.js"></script>
+</head>
+<body data-shell="public">
+  <div id="app"><div id="page"></div></div>
+
+  <script>
+    const HOW_STEPS = ['step1', 'step2', 'step3'];
+    const HOW_ICONS = { step1: 'tag', step2: 'calendar', step3: 'check-circle' };
+    const INFO = [
+      { icon: 'map-pin', key: 'address' },
+      { icon: 'clock', key: 'hours' },
+      { icon: 'phone', key: 'phone' },
+    ];
+
+    window.renderPage = function () {
+      const t = UI.t, icon = UI.icon, img = Data.serviceImage;
+      const st = Bk.get();
+      const featured = st.services.filter((s) => s.active).slice(0, 6);
+      const team = st.professionals.filter((p) => p.active).slice(0, 4);
+
+      const stats = [
+        { value: '12k+', key: 'statsBookings' },
+        { value: '4.8k+', key: 'statsClients' },
+        { value: String(st.professionals.length), key: 'statsPros' },
+        { value: '4.9', key: 'statsRating' },
+      ];
+
+      const hero =
+        '<section class="relative overflow-hidden"><div class="absolute inset-0 -z-10"><img src="' + img('hero-salon', 1600, 900) + '" alt="" class="h-full w-full object-cover"/><div class="absolute inset-0 bg-gradient-to-b from-gray-950/75 via-gray-950/60 to-gray-950/80"></div></div>' +
+        '<div class="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8 lg:py-32"><div class="max-w-2xl">' +
+        '<span class="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm font-medium text-white backdrop-blur">' + icon('zap', { size: 14 }) + ' ' + t('home.heroBadge') + '</span>' +
+        '<h1 class="mt-5 text-4xl font-bold leading-tight text-white sm:text-5xl">' + t('home.heroTitle') + '</h1>' +
+        '<p class="mt-4 text-lg text-gray-200">' + t('home.heroSubtitle') + '</p>' +
+        '<div class="mt-8 flex flex-wrap gap-3"><a href="agendar.html" class="inline-flex h-12 items-center gap-2 rounded-xl bg-brand-500 px-7 text-sm font-semibold text-white transition hover:bg-brand-600">' + icon('calendar', { size: 18 }) + ' ' + t('home.heroBook') + '</a>' +
+        '<a href="servicos.html" class="inline-flex h-12 items-center gap-2 rounded-xl bg-white/10 px-7 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20">' + t('home.heroServices') + '</a></div></div></div></section>';
+
+      const statsSection =
+        '<section class="border-b border-themed surface-card"><div class="mx-auto grid max-w-7xl grid-cols-2 gap-6 px-4 py-10 sm:px-6 lg:grid-cols-4 lg:px-8">' +
+        stats.map((s) => '<div class="text-center"><p class="text-3xl font-bold text-brand-600 dark:text-brand-400">' + s.value + '</p><p class="mt-1 text-sm text-muted">' + t('home.' + s.key) + '</p></div>').join('') +
+        '</div></section>';
+
+      const featuredSection =
+        '<section class="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div class="flex items-end justify-between"><div><h2 class="text-2xl font-bold text-heading sm:text-3xl">' + t('home.servicesTitle') + '</h2><p class="mt-2 text-muted">' + t('home.servicesSubtitle') + '</p></div>' +
+        '<a href="servicos.html" class="hidden items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700 sm:flex">' + t('common.viewAll') + ' ' + icon('arrow-right', { size: 16 }) + '</a></div>' +
+        '<div class="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">' + featured.map((s) => UI.serviceCard(s)).join('') + '</div></section>';
+
+      const prosSection =
+        '<section class="surface-card border-y border-themed"><div class="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div class="text-center"><h2 class="text-2xl font-bold text-heading sm:text-3xl">' + t('home.professionalsTitle') + '</h2><p class="mt-2 text-muted">' + t('home.professionalsSubtitle') + '</p></div>' +
+        '<div class="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">' + team.map((p) => UI.professionalCard(p)).join('') + '</div></div></section>';
+
+      const howSection =
+        '<section class="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div class="text-center"><h2 class="text-2xl font-bold text-heading sm:text-3xl">' + t('home.howTitle') + '</h2><p class="mt-2 text-muted">' + t('home.howSubtitle') + '</p></div>' +
+        '<div class="mt-10 grid gap-6 md:grid-cols-3">' + HOW_STEPS.map((step, i) =>
+          '<div class="relative rounded-2xl border border-themed p-6 text-center"><span class="absolute -top-4 left-1/2 -translate-x-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-brand-500 text-sm font-bold text-white">' + (i + 1) + '</span>' +
+          '<span class="mx-auto mt-2 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-500 dark:bg-brand-500/15">' + icon(HOW_ICONS[step], { size: 26 }) + '</span>' +
+          '<h3 class="mt-4 font-semibold text-heading">' + t('home.' + step + 'Title') + '</h3><p class="mt-2 text-sm text-muted">' + t('home.' + step + 'Text') + '</p></div>'
+        ).join('') + '</div></section>';
+
+      const infoSection =
+        '<section class="surface-card border-y border-themed"><div class="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 lg:grid-cols-2 lg:px-8">' +
+        '<div><h2 class="text-2xl font-bold text-heading">' + t('home.infoTitle') + '</h2><ul class="mt-5 space-y-4">' +
+        INFO.map((i) => '<li class="flex items-start gap-3"><span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-500 dark:bg-brand-500/15">' + icon(i.icon, { size: 18 }) + '</span><div><p class="text-sm font-medium text-heading">' + t('contact.' + i.key) + '</p><p class="text-sm text-muted">' + t('contact.' + i.key + 'Value') + '</p></div></li>').join('') +
+        '</ul></div><div class="overflow-hidden rounded-2xl border border-themed"><img src="' + img('map-area', 800, 500) + '" alt="" class="h-full max-h-72 w-full object-cover"/></div></div></section>';
+
+      const cta =
+        '<section class="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div class="relative overflow-hidden rounded-3xl bg-brand-500 px-6 py-14 text-center sm:px-12"><div class="absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10"></div><div class="absolute -bottom-20 -left-10 h-64 w-64 rounded-full bg-white/10"></div>' +
+        '<h2 class="relative text-2xl font-bold text-white sm:text-3xl">' + t('home.ctaTitle') + '</h2><p class="relative mx-auto mt-3 max-w-xl text-brand-50">' + t('home.ctaSubtitle') + '</p>' +
+        '<a href="agendar.html" class="relative mt-8 inline-flex h-12 items-center gap-2 rounded-xl bg-white px-7 text-sm font-semibold text-brand-600 transition hover:bg-brand-50">' + icon('calendar', { size: 18 }) + ' ' + t('home.ctaButton') + '</a></div></section>';
+
+      document.getElementById('tx-main').innerHTML = hero + statsSection + featuredSection + prosSection + howSection + infoSection + cta;
+    };
+  </script>
+  <script src="assets/js/layout.js"></script>
+</body>
+</html>

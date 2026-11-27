@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <title>Agendamento — Serviços &amp; Horários</title>
+  <link rel="stylesheet" href="assets/css/tailwind.css" />
+  <script src="assets/js/state.js"></script>
+  <script src="assets/js/auth.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/bk.js"></script>
+  <script src="assets/js/query.js"></script>
+  <script src="assets/js/icons.js"></script>
+  <script src="assets/js/i18n.js"></script>
+</head>
+<body data-shell="app" data-guard="true">
+  <div id="app"><div id="page"></div></div>
+
+  <script>
+    window.renderPage = function () {
+      const t = UI.t, icon = UI.icon;
+      const st = Bk.get();
+      const apptCount = (id) => st.appointments.filter((a) => a.clientId === id).length;
+
+      const table = UI.dataTable({
+        id: 'cli-table',
+        rows: st.clients,
+        pageSize: 8,
+        searchKeys: ['name', 'email', 'phone'],
+        columns: [
+          { key: 'name', header: t('clients.columns.client'), render: (c) => '<div class="flex items-center gap-3">' + UI.avatar({ src: c.avatar, name: c.name, size: 'sm' }) + '<p class="font-medium text-heading">' + c.name + '</p></div>' },
+          { header: t('clients.columns.contact'), sortable: false, render: (c) => '<div class="text-xs text-muted"><p>' + c.email + '</p><p>' + c.phone + '</p></div>' },
+          { key: 'since', header: t('clients.columns.since'), render: (c) => '<span class="text-muted">' + UI.fmtDate(c.since) + '</span>' },
+          { header: t('clients.columns.appointments'), sortable: false, render: (c) => '<span class="font-medium text-heading">' + apptCount(c.id) + '</span>' },
+          { header: '', sortable: false, render: (c) => '<div class="flex justify-end"><button type="button" data-view="' + c.id + '" class="flex items-center gap-1.5 rounded-lg border border-themed px-3 py-1.5 text-xs font-medium text-body hover:bg-gray-50 dark:hover:bg-gray-800">' + icon('eye', { size: 14 }) + ' ' + t('clients.view') + '</button></div>' },
+        ],
+      });
+
+      document.getElementById('page').innerHTML =
+        UI.pageHeader({ title: t('clients.title'), subtitle: t('clients.subtitle') }) +
+        table + UI.modal('cli-modal', { size: 'md' });
+
+      UI.renderTable('cli-table');
+      document.querySelectorAll('[data-view]').forEach((el) => el.addEventListener('click', () => openDetail(Number(el.getAttribute('data-view')))));
+    };
+
+    function openDetail(id) {
+      const t = UI.t;
+      const st = Bk.get();
+      const c = st.clients.find((x) => x.id === id);
+      if (!c) return;
+      const history = Query.appointmentsForClient(st.appointments, c.id);
+      const totalSpent = history.filter((a) => a.status === 'concluido').reduce((s, a) => s + a.price, 0);
+
+      const histHtml = history.length === 0
+        ? '<p class="py-4 text-center text-sm text-muted">' + t('clients.noHistory') + '</p>'
+        : '<ul class="max-h-56 space-y-2 overflow-y-auto">' + history.map((a) => {
+            const svc = Query.serviceById(st.services, a.serviceId);
+            return '<li class="flex items-center justify-between gap-2 rounded-lg border border-themed p-3"><div class="min-w-0"><p class="truncate text-sm font-medium text-heading">' + (svc ? svc.name : '') + '</p><p class="text-xs text-muted">' + UI.fmtDateTime(a.datetime) + '</p></div>' + UI.statusPill(a.status) + '</li>';
+          }).join('') + '</ul>';
+
+      const body =
+        '<div class="space-y-5"><div class="flex items-center gap-4">' + UI.avatar({ src: c.avatar, name: c.name, size: 'lg' }) + '<div><p class="text-lg font-semibold text-heading">' + c.name + '</p><p class="text-sm text-muted">' + t('clients.since') + ' ' + UI.fmtDate(c.since) + '</p></div></div>' +
+        '<div class="grid gap-3 sm:grid-cols-2"><div class="rounded-xl border border-themed p-3"><p class="text-xs text-muted">' + t('clients.contact') + '</p><p class="mt-1 text-sm text-body">' + c.email + '</p><p class="text-sm text-body">' + c.phone + '</p></div>' +
+        '<div class="rounded-xl border border-themed p-3"><p class="text-xs text-muted">' + t('clients.totalSpent') + '</p><p class="mt-1 text-lg font-bold text-brand-600 dark:text-brand-400">' + UI.fmt(totalSpent) + '</p></div></div>' +
+        (c.notes ? '<div class="rounded-xl border border-themed p-3"><p class="text-xs text-muted">' + t('clients.notes') + '</p><p class="mt-1 text-sm text-body">' + c.notes + '</p></div>' : '') +
+        '<div><p class="mb-2 text-sm font-semibold text-heading">' + t('clients.history') + '</p>' + histHtml + '</div></div>';
+
+      const wrap = document.getElementById('cli-modal');
+      wrap.querySelector('[data-modal-body]').innerHTML = body;
+      wrap.querySelector('h2').textContent = t('clients.detailTitle');
+      UI.openModal('cli-modal');
+    }
+  </script>
+  <script src="assets/js/layout.js"></script>
+</body>
+</html>

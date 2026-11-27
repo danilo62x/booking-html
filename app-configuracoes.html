@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <title>Agendamento — Serviços &amp; Horários</title>
+  <link rel="stylesheet" href="assets/css/tailwind.css" />
+  <script src="assets/js/state.js"></script>
+  <script src="assets/js/auth.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/bk.js"></script>
+  <script src="assets/js/query.js"></script>
+  <script src="assets/js/icons.js"></script>
+  <script src="assets/js/i18n.js"></script>
+</head>
+<body data-shell="app" data-guard="true">
+  <div id="app"><div id="page"></div></div>
+
+  <script>
+    let activeTab = 0;
+    let notif = { email: true, push: false, reminders: true, marketing: false };
+
+    function tabItems() {
+      const t = UI.t;
+      const user = Auth.getUser() || {};
+      const fieldCls = 'h-11 w-full rounded-lg border border-themed bg-transparent px-3 text-sm text-body focus-ring';
+      const labeled = (label, inner) => '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + label + '</label>' + inner + '</div>';
+
+      const profile =
+        '<form data-form-profile class="max-w-xl space-y-4">' +
+        '<div class="flex items-center gap-4">' + UI.avatar({ name: user.name, size: 'lg' }) + '<button type="button" class="rounded-lg border border-themed px-4 py-2 text-sm font-medium text-body hover:bg-gray-50 dark:hover:bg-gray-800">' + t('settings.profile.changePhoto') + '</button></div>' +
+        '<div class="grid gap-4 sm:grid-cols-2">' + labeled(t('settings.profile.name'), '<input data-f="name" value="' + (user.name || '') + '" class="' + fieldCls + '"/>') + labeled(t('settings.profile.email'), '<input data-f="email" type="email" value="' + (user.email || '') + '" class="' + fieldCls + '"/>') + '</div>' +
+        '<div class="grid gap-4 sm:grid-cols-2">' + labeled(t('settings.profile.role'), '<input data-f="role" value="' + (user.role || '') + '" class="' + fieldCls + '"/>') + labeled(t('settings.profile.phone'), '<input data-f="phone" value="' + (user.phone || '') + '" class="' + fieldCls + '"/>') + '</div>' +
+        '<button type="submit" class="rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-brand-600">' + t('settings.profile.save') + '</button></form>';
+
+      const business =
+        '<form data-form-business class="max-w-xl space-y-4">' +
+        labeled(t('settings.business.name'), '<input data-f="name" value="' + (user.business || '') + '" class="' + fieldCls + '"/>') +
+        labeled(t('settings.business.address'), '<input data-f="address" value="' + t('contact.addressValue') + '" class="' + fieldCls + '"/>') +
+        labeled(t('settings.business.phone'), '<input data-f="phone" value="' + t('contact.phoneValue') + '" class="' + fieldCls + '"/>') +
+        '<div class="grid gap-4 sm:grid-cols-3">' + labeled(t('settings.business.openTime'), '<input data-f="openTime" type="time" value="09:00" class="' + fieldCls + '"/>') + labeled(t('settings.business.closeTime'), '<input data-f="closeTime" type="time" value="19:00" class="' + fieldCls + '"/>') + labeled(t('settings.business.slotInterval'), '<input data-f="slotInterval" type="number" value="30" class="' + fieldCls + '"/>') + '</div>' +
+        '<button type="submit" class="rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-brand-600">' + t('settings.business.save') + '</button></form>';
+
+      const row = (k) =>
+        '<div class="flex items-center justify-between border-b border-themed py-4 last:border-0"><div><p class="text-sm font-medium text-heading">' + t('settings.notifications.' + k) + '</p><p class="text-xs text-muted">' + t('settings.notifications.' + k + 'Desc') + '</p></div>' + UI.switchToggle(notif[k], 'data-notif="' + k + '"') + '</div>';
+      const notifications =
+        '<div class="max-w-xl">' + ['email', 'push', 'reminders', 'marketing'].map(row).join('') +
+        '<button type="button" data-save-notif class="mt-5 rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-brand-600">' + t('common.save') + '</button></div>';
+
+      return [
+        { label: t('settings.tabs.profile'), icon: 'user', content: profile },
+        { label: t('settings.tabs.business'), icon: 'store', content: business },
+        { label: t('settings.tabs.notifications'), icon: 'bell', content: notifications },
+      ];
+    }
+
+    window.renderPage = function () {
+      const t = UI.t;
+      document.getElementById('page').innerHTML =
+        UI.pageHeader({ title: t('settings.title'), subtitle: t('settings.subtitle') }) +
+        '<div class="surface-card rounded-2xl border p-6">' + UI.tabs(tabItems(), activeTab) + '</div>';
+      bindTab();
+    };
+
+    // Re-renders the tab body and rebinds its handlers (used on tab switch).
+    window.onTabChange = function (idx, wrap) {
+      activeTab = idx;
+      const items = tabItems();
+      // Update tab head active states.
+      wrap.querySelectorAll('[data-tab]').forEach((b, i) => {
+        b.className = '-mb-px inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition ' +
+          (i === idx ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-muted hover:border-gray-300 hover:text-body dark:hover:border-gray-700');
+      });
+      wrap.querySelector('[data-tab-panel]').innerHTML = items[idx].content;
+      bindTab();
+    };
+
+    function bindTab() {
+      const t = UI.t;
+      const page = document.getElementById('page');
+      const pf = page.querySelector('[data-form-profile]');
+      if (pf) pf.addEventListener('submit', function (e) {
+        e.preventDefault();
+        Auth.updateProfile({ name: pf.querySelector('[data-f="name"]').value, email: pf.querySelector('[data-f="email"]').value, role: pf.querySelector('[data-f="role"]').value, phone: pf.querySelector('[data-f="phone"]').value });
+        UI.notify(t('settings.profile.saved'), 'success');
+      });
+      const bf = page.querySelector('[data-form-business]');
+      if (bf) bf.addEventListener('submit', function (e) {
+        e.preventDefault();
+        Auth.updateProfile({ business: bf.querySelector('[data-f="name"]').value });
+        UI.notify(t('settings.business.saved'), 'success');
+      });
+      page.querySelectorAll('[data-notif]').forEach((el) => el.addEventListener('click', function () {
+        const k = this.getAttribute('data-notif');
+        notif[k] = !notif[k];
+        this.setAttribute('aria-checked', String(notif[k]));
+        this.className = 'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ' + (notif[k] ? 'bg-brand-500' : 'bg-gray-300 dark:bg-gray-700');
+        this.querySelector('span').className = 'inline-block h-4 w-4 transform rounded-full bg-white shadow-theme-xs transition ' + (notif[k] ? 'translate-x-6' : 'translate-x-1');
+      }));
+      const sn = page.querySelector('[data-save-notif]');
+      if (sn) sn.addEventListener('click', () => UI.notify(t('settings.notifications.saved'), 'success'));
+    }
+  </script>
+  <script src="assets/js/layout.js"></script>
+</body>
+</html>

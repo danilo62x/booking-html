@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <title>Agendamento — Serviços &amp; Horários</title>
+  <link rel="stylesheet" href="assets/css/tailwind.css" />
+  <script src="assets/js/state.js"></script>
+  <script src="assets/js/auth.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/bk.js"></script>
+  <script src="assets/js/query.js"></script>
+  <script src="assets/js/icons.js"></script>
+  <script src="assets/js/i18n.js"></script>
+</head>
+<body data-shell="public">
+  <div id="app"><div id="page"></div></div>
+
+  <script>
+    let state = { query: '', category: '' };
+
+    window.renderPage = function () {
+      const t = UI.t, icon = UI.icon;
+      const st = Bk.get();
+
+      let filtered = st.services.filter((s) => s.active);
+      if (state.category) filtered = filtered.filter((s) => s.category === state.category);
+      filtered = Query.searchServices(filtered, state.query);
+
+      // Group by category.
+      const grouped = new Map();
+      for (const s of filtered) {
+        const arr = grouped.get(s.category) || [];
+        arr.push(s);
+        grouped.set(s.category, arr);
+      }
+
+      const chip = (active) =>
+        'h-10 rounded-lg border px-4 text-sm font-medium transition ' +
+        (active ? 'border-brand-500 bg-brand-500 text-white' : 'border-themed text-body hover:border-brand-300');
+
+      const cats = '<button type="button" data-cat="" class="' + chip(state.category === '') + '">' + t('common.all') + '</button>' +
+        Query.CATEGORIES.map((c) => '<button type="button" data-cat="' + c + '" class="' + chip(state.category === c) + '">' + t('categories.' + c) + '</button>').join('');
+
+      const filterBar =
+        '<div class="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">' +
+        '<div class="relative flex-1"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">' + icon('search', { size: 18 }) + '</span>' +
+        '<input data-search value="' + state.query.replace(/"/g, '&quot;') + '" placeholder="' + t('services.searchPlaceholder') + '" class="h-11 w-full rounded-lg border border-themed bg-card-bg pl-10 pr-3 text-sm text-body focus-ring surface-card"/></div>' +
+        '<div class="flex flex-wrap gap-2">' + cats + '</div></div>';
+
+      let results;
+      if (filtered.length === 0) {
+        results = '<div class="mt-12">' + UI.emptyState({ icon: 'tag', title: t('services.empty') }) + '</div>';
+      } else {
+        results = '<div class="mt-10 space-y-12">' + [...grouped.entries()].map(([cat, items]) =>
+          '<div><h2 class="mb-5 text-lg font-semibold text-heading">' + t('categories.' + cat) + '</h2>' +
+          '<div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">' + items.map((s) => UI.serviceCard(s)).join('') + '</div></div>'
+        ).join('') + '</div>';
+      }
+
+      document.getElementById('tx-main').innerHTML =
+        '<div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">' +
+        '<div class="text-center"><h1 class="text-2xl font-bold text-heading sm:text-3xl">' + t('services.title') + '</h1><p class="mt-2 text-muted">' + t('services.subtitle') + '</p></div>' +
+        filterBar + results + '</div>';
+
+      const search = document.querySelector('[data-search]');
+      if (search) search.addEventListener('input', function () {
+        state.query = this.value;
+        window.renderPage();
+        const el = document.querySelector('[data-search]');
+        if (el) { el.focus(); const v = el.value; el.setSelectionRange(v.length, v.length); }
+      });
+      document.querySelectorAll('[data-cat]').forEach((btn) => btn.addEventListener('click', function () {
+        state.category = this.getAttribute('data-cat');
+        window.renderPage();
+      }));
+    };
+  </script>
+  <script src="assets/js/layout.js"></script>
+</body>
+</html>

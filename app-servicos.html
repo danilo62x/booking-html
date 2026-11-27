@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <title>Agendamento — Serviços &amp; Horários</title>
+  <link rel="stylesheet" href="assets/css/tailwind.css" />
+  <script src="assets/js/state.js"></script>
+  <script src="assets/js/auth.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/bk.js"></script>
+  <script src="assets/js/query.js"></script>
+  <script src="assets/js/icons.js"></script>
+  <script src="assets/js/i18n.js"></script>
+</head>
+<body data-shell="app" data-guard="true">
+  <div id="app"><div id="page"></div></div>
+
+  <script>
+    let category = '';
+    let editingId = null;
+
+    function filteredRows() {
+      const services = Bk.get().services;
+      return category ? services.filter((s) => s.category === category) : services;
+    }
+
+    window.renderPage = function () {
+      const t = UI.t, icon = UI.icon;
+      const selectCls = 'h-10 rounded-lg border border-themed bg-card-bg px-3 text-sm text-body focus-ring surface-card';
+      const catOpts = '<option value="">' + t('servicesAdmin.title') + ' — ' + t('common.all') + '</option>' +
+        Query.CATEGORIES.map((c) => '<option value="' + c + '"' + (category === c ? ' selected' : '') + '>' + t('categories.' + c) + '</option>').join('');
+
+      const table = UI.dataTable({
+        id: 'svc-table',
+        rows: filteredRows(),
+        pageSize: 8,
+        searchKeys: ['name', 'description'],
+        columns: [
+          { key: 'name', header: t('servicesAdmin.columns.service'), render: (s) => '<div class="flex items-center gap-3"><img src="' + s.photo + '" alt="" class="h-11 w-11 shrink-0 rounded-lg object-cover"/><p class="font-medium text-heading">' + s.name + '</p></div>' },
+          { key: 'category', header: t('servicesAdmin.columns.category'), render: (s) => UI.badge(t('categories.' + s.category), 'gray') },
+          { key: 'duration', header: t('servicesAdmin.columns.duration'), render: (s) => '<span class="text-muted">' + s.duration + ' ' + t('common.minutes') + '</span>' },
+          { key: 'price', header: t('servicesAdmin.columns.price'), render: (s) => '<span class="font-semibold text-heading">' + UI.fmt(s.price) + '</span>' },
+          { key: 'active', header: t('servicesAdmin.columns.status'), sortable: false, render: (s) => UI.switchToggle(s.active, 'data-toggle="' + s.id + '"') },
+          { header: '', sortable: false, render: (s) =>
+            '<div class="flex justify-end gap-1"><button type="button" data-edit="' + s.id + '" class="rounded-md p-1.5 text-muted hover:bg-gray-100 hover:text-brand-600 dark:hover:bg-gray-800" aria-label="' + t('common.edit') + '">' + icon('edit', { size: 16 }) + '</button>' +
+            '<button type="button" data-remove="' + s.id + '" class="rounded-md p-1.5 text-muted hover:bg-error-50 hover:text-error-600 dark:hover:bg-error-500/10" aria-label="' + t('common.delete') + '">' + icon('trash', { size: 16 }) + '</button></div>' },
+        ],
+      });
+
+      document.getElementById('page').innerHTML =
+        UI.pageHeader({ title: t('servicesAdmin.title'), subtitle: t('servicesAdmin.subtitle'),
+          action: '<button type="button" data-new class="flex h-10 items-center gap-2 rounded-lg bg-brand-500 px-4 text-sm font-medium text-white transition hover:bg-brand-600">' + icon('plus', { size: 16 }) + ' ' + t('servicesAdmin.new') + '</button>' }) +
+        '<div class="mb-4 flex flex-wrap gap-3"><select data-cat class="' + selectCls + '">' + catOpts + '</select></div>' +
+        table + UI.modal('svc-modal', { size: 'md' });
+
+      UI.renderTable('svc-table');
+      bind();
+    };
+
+    function bind() {
+      const page = document.getElementById('page');
+      page.querySelector('[data-cat]').addEventListener('change', function () { category = this.value; window.renderPage(); });
+      page.querySelector('[data-new]').addEventListener('click', () => openModal(null));
+      page.querySelectorAll('[data-edit]').forEach((el) => el.addEventListener('click', () => openModal(Number(el.getAttribute('data-edit')))));
+      page.querySelectorAll('[data-remove]').forEach((el) => el.addEventListener('click', () => { Bk.removeService(Number(el.getAttribute('data-remove'))); UI.notify(UI.t('servicesAdmin.removed'), 'success'); window.renderPage(); }));
+      page.querySelectorAll('[data-toggle]').forEach((el) => el.addEventListener('click', () => {
+        const id = Number(el.getAttribute('data-toggle'));
+        const svc = Bk.get().services.find((s) => s.id === id);
+        Bk.toggleServiceActive(id);
+        UI.notify(svc.active ? UI.t('servicesAdmin.deactivated') : UI.t('servicesAdmin.activated'), 'success');
+        window.renderPage();
+      }));
+    }
+
+    function openModal(id) {
+      const t = UI.t;
+      editingId = id;
+      const svc = id != null ? Bk.get().services.find((s) => s.id === id) : null;
+      const fieldCls = 'h-11 w-full rounded-lg border border-themed bg-transparent px-3 text-sm text-body focus-ring';
+      const v = {
+        name: svc ? svc.name : '', category: svc ? svc.category : 'cabelo',
+        duration: svc ? svc.duration : 30, price: svc ? svc.price : 0,
+        description: svc ? svc.description : '', active: svc ? svc.active : true,
+      };
+      const catOpts = Query.CATEGORIES.map((c) => '<option value="' + c + '"' + (v.category === c ? ' selected' : '') + '>' + t('categories.' + c) + '</option>').join('');
+
+      const body =
+        '<div class="space-y-4">' +
+        '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('servicesAdmin.fields.name') + '</label><input data-f="name" value="' + v.name.replace(/"/g, '&quot;') + '" class="' + fieldCls + '"/></div>' +
+        '<div class="grid gap-4 sm:grid-cols-3">' +
+        '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('servicesAdmin.fields.category') + '</label><select data-f="category" class="' + fieldCls + '">' + catOpts + '</select></div>' +
+        '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('servicesAdmin.fields.duration') + '</label><input data-f="duration" type="number" value="' + v.duration + '" class="' + fieldCls + '"/></div>' +
+        '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('servicesAdmin.fields.price') + '</label><input data-f="price" type="number" value="' + v.price + '" class="' + fieldCls + '"/></div></div>' +
+        '<div><label class="mb-1.5 block text-sm font-medium text-heading">' + t('servicesAdmin.fields.description') + '</label><textarea data-f="description" rows="3" class="w-full rounded-lg border border-themed bg-transparent px-3 py-2 text-sm text-body focus-ring">' + v.description + '</textarea></div>' +
+        '<label class="flex cursor-pointer items-center gap-2 text-sm text-body"><input data-f="active" type="checkbox" ' + (v.active ? 'checked' : '') + ' class="h-4 w-4 rounded border-themed accent-brand-500"/>' + t('servicesAdmin.fields.active') + '</label>' +
+        '<p data-err class="hidden text-sm text-error-600"></p></div>';
+      const footer =
+        '<button type="button" data-modal-close class="rounded-lg border border-themed px-4 py-2 text-sm font-medium text-body hover:bg-gray-50 dark:hover:bg-gray-800">' + t('common.cancel') + '</button>' +
+        '<button type="button" data-save class="rounded-lg bg-brand-500 px-5 py-2 text-sm font-medium text-white hover:bg-brand-600">' + t('common.save') + '</button>';
+
+      const wrap = document.getElementById('svc-modal');
+      wrap.querySelector('[data-modal-body]').innerHTML = body;
+      let foot = wrap.querySelector('[data-modal-footer]');
+      if (!foot) { foot = document.createElement('div'); foot.className = 'flex justify-end gap-3 border-t border-themed px-6 py-4'; foot.setAttribute('data-modal-footer', ''); wrap.querySelector('.surface-card').appendChild(foot); }
+      foot.innerHTML = footer;
+      wrap.querySelector('h2').textContent = svc ? t('servicesAdmin.editTitle') : t('servicesAdmin.newTitle');
+
+      wrap.querySelector('[data-save]').addEventListener('click', function () {
+        const g = (f) => wrap.querySelector('[data-f="' + f + '"]');
+        const name = g('name').value.trim();
+        const duration = Number(g('duration').value);
+        const price = Number(g('price').value);
+        const err = wrap.querySelector('[data-err]');
+        if (!name) { err.textContent = t('servicesAdmin.errors.name'); err.classList.remove('hidden'); return; }
+        if (!(duration >= 5)) { err.textContent = t('servicesAdmin.errors.duration'); err.classList.remove('hidden'); return; }
+        if (!(price >= 0)) { err.textContent = t('servicesAdmin.errors.price'); err.classList.remove('hidden'); return; }
+        const payload = { name, category: g('category').value, duration, price, description: g('description').value, active: g('active').checked, professionalIds: svc ? svc.professionalIds : [] };
+        if (editingId != null) { Bk.updateService(editingId, payload); UI.notify(t('servicesAdmin.updated'), 'success'); }
+        else { Bk.addService(payload); UI.notify(t('servicesAdmin.created'), 'success'); }
+        UI.closeModal('svc-modal');
+        window.renderPage();
+      });
+
+      UI.openModal('svc-modal');
+    }
+  </script>
+  <script src="assets/js/layout.js"></script>
+</body>
+</html>
